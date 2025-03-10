@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>CrystalCore Meditation Space - RealityCraft</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+    #container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+    #ui {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      display: flex;
+      gap: 10px;
+    }
+    button {
+      padding: 10px 20px;
+      background-color: rgba(30, 30, 60, 0.7);
+      color: white;
+      border: 1px solid #7B68EE;
+      border-radius: 20px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(5px);
+    }
+    button:hover {
+      background-color: rgba(123, 104, 238, 0.8);
+    }
+    .loading-screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      color: white;
+      transition: opacity 1s ease;
+    }
+    .spinner {
+      width: 80px;
+      height: 80px;
+      border: 8px solid rgba(255, 255, 255, 0.1);
+      border-radius: 50%;
+      border-top: 8px solid #7B68EE;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="container"></div>
+  
+  <div id="ui">
+    <button id="enterVR">Enter VR</button>
+    <button id="enterAR">Enter AR</button>
+    <button id="toggleAudio">Music: Off</button>
+  </div>
+  
+  <div class="loading-screen" id="loadingScreen">
+    <div class="spinner"></div>
+    <h2>Loading Crystal Meditation Space</h2>
+    <p>Preparing your immersive experience...</p>
+  </div>
+
+  <!-- Three.js and related libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r132/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/libs/stats.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/webxr/VRButton.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.132.0/examples/js/webxr/ARButton.js"></script>
+
+  <script>
+    // Main application
+    class CrystalMeditationSpace {
+      constructor() {
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.clock = new THREE.Clock();
+        this.mixers = [];
+        this.controls = null;
+        this.crystals = [];
+        this.lights = [];
+        this.avatars = [];
+        this.audioElements = {};
+        this.isAudioPlaying = false;
+        this.roomSize = 20;
+        
+        this.init();
+      }
+      
+      async init() {
+        // Create scene
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x000814);
+        this.scene.fog = new THREE.FogExp2(0x000814, 0.02);
+        
+        // Set up camera
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.camera.position.set(0, 1.6, 5);
+        
+        // Set up renderer
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.outputEncoding = THREE.sRGBEncoding;
+        this.renderer.xr.enabled = true;
+        document.getElementById('container').appendChild(this.renderer.domElement);
+        
+        // XR setup
+        document.getElementById('enterVR').addEventListener('click', () => {
+          document.body.appendChild(THREE.VRButton.createButton(this.renderer));
+          document.getElementById('ui').classList.add('hidden');
+        });
+        
+        document.getElementById('enterAR').addEventListener('click', () => {
+          document.body.appendChild(THREE.ARButton.createButton(this.renderer));
+          document.getElementById('ui').classList.add('hidden');
+        });
+        
+        // Controls
+        this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.target.set(0, 1, 0);
+        this.controls.update();
+        
+        // Audio setup
+        this.setupAudio();
+        
+        // Create the environment
+        await this.createEnvironment();
+        
+        // Lighting
+        this.setupLighting();
+        
+        // Event listeners
+        window.addEventListener('resize', this.onWindowResize.bind(this));
+        
+        // Hide loading screen after environment is loaded
+        setTimeout(() => {
+          document.getElementById('loadingScreen').classList.add('hidden');
+        }, 2000);
+        
+        // Start animation loop
+        this.renderer.setAnimationLoop(this.animate.bind(this));
+      }
+      
+      setupAudio() {
+        // Ambient meditation music
+        this.audioElements.ambient = new Audio();
+        this.audioElements.ambient.src = "https://cdn.example.com/meditation-ambient.mp3"; // Replace with actual audio URL
+        this.audioElements.ambient.loop = true;
+        this.audioElements.ambient.volume = 0.5;
+        
+        document.getElementById('toggleAudio').addEventListener('click', () => {
+          const audioButton = document.getElementById('toggleAudio');
+          if (this.isAudioPlaying) {
+            this.audioElements.ambient.pause();
+            audioButton.textContent = "Music: Off";
+          } else {
+            this.audioElements.ambient.play();
+            audioButton.textContent = "Music: On";
+          }
+          this.isAudioPlaying = !this.isAudioPlaying;
+        });
+      }
+      
+      async createEnvironment() {
+        // Floor - crystal platform
+        const floorGeometry = new THREE.CircleGeometry(this.roomSize, 32);
+        const floorMaterial = new THREE.MeshStandardMaterial({ 
+          color: 0x3a506b,
+          roughness: 0.3,
+          metalness: 0.7,
+          envMapIntensity: 1.0
+        });
+        const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        this.scene.add(floor);
+        
+        // Create crystal dome
+        this.createCrystalDome();
+        
+        // Add large crystal formations
+        await this.addCrystalFormations();
+
+        // Add meditation spots
+        this.createMeditationSpots();
+      }
+      
+      createCrystalDome() {
+        // Crystal dome
+        const domeGeometry = new THREE.IcosahedronGeometry(this.roomSize, 2);
+        const domeMaterial = new THREE.MeshPhysicalMaterial({
+          color: 0x7B68EE,
+          roughness: 0.2,
+          metalness: 0.1,
+          transmission: 0.9,
+          transparent: true,
+          opacity: 0.3,
+          side: THREE.BackSide
+        });
+        
+        const dome = new THREE.Mesh(domeGeometry, domeMaterial);
+        dome.position.y = this.roomSize / 2;
+        this.scene.add(dome);
+        
+        // Add crystal patterns to the dome
+        for (let i = 0; i < 100; i++) {
+          const crystal = this.createCrystal(Math.random() * 0.3 + 0.1);
+          const phi = Math.acos(-1 + (2 * i) / 100);
+          const theta = Math.sqrt(100 * Math.PI) * phi;
+          
+          crystal.position.x = (this.roomSize - 0.5) * Math.cos(theta) * Math.sin(phi);
+          crystal.position.y = (this.roomSize - 0.5) * Math.sin(theta) * Math.sin(phi) + this.roomSize / 2;
+          crystal.position.z = (this.roomSize - 0.5) * Math.cos(phi);
+          
+          crystal.lookAt(0, this.roomSize / 2, 0);
+          this.scene.add(crystal);
+          this.crystals.push(crystal);
+        }
+      }
+      
+      async addCrystalFormations() {
+        // Create central crystal formation
+        const centralFormation = new THREE.Group();
+        
+        // Base large crystal
+        const largeCrystal = this.createCrystal(3);
+        largeCrystal.position.y = 1.5;
+        centralFormation.add(largeCrystal);
+        
+        // Surrounding smaller crystals
+        for (let i = 0; i < 7; i++) {
+          const angle = (i / 7) * Math.PI * 2;
+          const radius = 2;
+          
+          const crystal = this.createCrystal(Math.random() * 1 + 0.5);
+          crystal.position.x = Math.cos(angle) * radius;
+          crystal.position.z = Math.sin(angle) * radius;
+          crystal.position.y = Math.random() * 0.5;
+          crystal.rotation.y = Math.random() * Math.PI;
+          crystal.rotation.z = Math.random() * 0.3;
+          
+          centralFormation.add(crystal);
+        }
+        
+        this.scene.add(centralFormation);
+        
+        // Create labradorite formations around the perimeter
+        for (let i = 0; i < 5; i++) {
+          const angle = (i / 5) * Math.PI * 2;
+          const radius = this.roomSize * 0.7;
+          
+          const formation = this.createLabradoriteFormation();
+          formation.position.x = Math.cos(angle) * radius;
+          formation.position.z = Math.sin(angle) * radius;
+          formation.rotation.y = Math.random() * Math.PI;
+          
+          this.scene.add(formation);
+        }
+      }
+      
+      createLabradoriteFormation() {
+        const formation = new THREE.Group();
+        
+        // Create 5-8 labradorite crystals in a formation
+        const numCrystals = Math.floor(Math.random() * 4) + 5;
+        
+        for (let i = 0; i < numCrystals; i++) {
+          const crystal = this.createLabradoriteCrystal(Math.random() * 1 + 0.5);
+          
+          // Position crystals in a natural looking formation
+          const angle = Math.random() * Math.PI * 2;
+          const radius = Math.random() * 1.5;
+          
+          crystal.position.x = Math.cos(angle) * radius;
+          crystal.position.z = Math.sin(angle) * radius;
+          crystal.position.y = Math.random() * 0.5;
+          
+          // Random rotation
+          crystal.rotation.x = Math.random() * 0.5;
+          crystal.rotation.y = Math.random() * Math.PI * 2;
+          crystal.rotation.z = Math.random() * 0.5;
+          
+          formation.add(crystal);
+        }
+        
+        return formation;
+      }
+      
+      createCrystal(size) {
+        // Create a crystal with multiple segments
+        const crystal = new THREE.Group();
+        
+        // Create 3-6 segments for the crystal
+        const numSegments = Math.floor(Math.random() * 4) + 3;
+        
+        for (let i = 0; i < numSegments; i++) {
+          const geometry = new THREE.ConeGeometry(
+            size * (0.3 + Math.random() * 0.2), // radius
+            size * (1 + Math.random() * 0.5),   // height
+            Math.floor(Math.random() * 2) + 5   // radial segments
+          );
+          
+          // Quartz material
+          const material = new THREE.MeshPhysicalMaterial({
+            color: new THREE.Color(0.9, 0.9, 1).multiplyScalar(0.8 + Math.random() * 0.2),
+            roughness: 0.2,
+            metalness: 0.1,
+            transmission: 0.7,
+            transparent: true
+          });
+          
+          const segment = new THREE.Mesh(geometry, material);
+          
+          // Position and rotate segment randomly but naturally
+          segment.rotation.x = Math.random() * 0.3;
+          segment.rotation.y = Math.random() * Math.PI * 2;
+          segment.rotation.z = Math.random() * 0.3;
+          
+          // Offset slightly from center
+          segment.position.x = (Math.random() - 0.5) * size * 0.3;
+          segment.position.z = (Math.random() - 0.5) * size * 0.3;
+          
+          crystal.add(segment);
+        }
+        
+        return crystal;
+      }
+      
+      createLabradoriteCrystal(size) {
+        // Create a labradorite crystal
+        const geometry = new THREE.BufferGeometry();
+        
+        // Create a more complex crystal shape with custom vertices
+        const vertices = [];
+        const sides = Math.floor(Math.random() * 3) + 5;
+        
+        // Top point
+        vertices.push(0, size, 0);
+        
+        // Create sides
+        for (let i = 0; i < sides; i++) {
+          const angle = (i / sides) * Math.PI * 2;
+          const radius = size * (0.4 + Math.random() * 0.2);
+          
+          vertices.push(
+            Math.cos(angle) * radius,
+            0,
+            Math.sin(angle) * radius
+          );
+        }
+        
+        // Create faces (triangles)
+        const indices = [];
+        for (let i = 1; i <= sides; i++) {
+          indices.push(0, i, i % sides + 1);
+        }
+        
+        geometry.setIndex(indices);
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.computeVertexNormals();
+        
+        // Labradorite material - iridescent effect
+        const material = new THREE.MeshPhysicalMaterial({
+          color: 0x2C3539,
+          roughness: 0.2,
+          metalness: 0.8,
+          iridescence: 0.9,
+          iridescenceIOR: 1.5,
+          envMapIntensity: 1.5,
+          clearcoat: 1.0,
+          clearcoatRoughness: 0.1
+        });
+        
+        return new THREE.Mesh(geometry, material);
+      }
+      
+      createMeditationSpots() {
+        // Create meditation spots around the central formation
+        for (let i = 0; i < 6; i++) {
+          const angle = (i / 6) * Math.PI * 2;
+          const radius = 6;
+          
+          // Cushion
+          const cushionGeometry = new THREE.CylinderGeometry(0.5, 0.5, 0.1, 16);
+          const cushionMaterial = new THREE.MeshStandardMaterial({
+            color: 0x3a506b,
+            roughness: 0.8,
+            metalness: 0.1
+          });
+          const cushion = new THREE.Mesh(cushionGeometry, cushionMaterial);
+          
+          cushion.position.x = Math.cos(angle) * radius;
+          cushion.position.z = Math.sin(angle) * radius;
+          cushion.position.y = 0.05;
+          
+          this.scene.add(cushion);
+          
+          // Small crystal formation near each meditation spot
+          const smallFormation = new THREE.Group();
+          
+          for (let j = 0; j < 3; j++) {
+            const crystal = this.createCrystal(Math.random() * 0.3 + 0.2);
+            crystal.position.x = Math.cos(angle) * (radius + 0.7) + (Math.random() - 0.5) * 0.5;
+            crystal.position.z = Math.sin(angle) * (radius + 0.7) + (Math.random() - 0.5) * 0.5;
+            crystal.position.y = Math.random() * 0.2;
+            
+            this.scene.add(crystal);
+          }
+        }
+      }
+      
+      setupLighting() {
+        // Ambient light
+        const ambientLight = new THREE.AmbientLight(0x333366, 0.5);
+        this.scene.add(ambientLight);
+        
+        // Main directional light
+        const mainLight = new THREE.DirectionalLight(0xffffff, 1);
+        mainLight.position.set(5, 10, 5);
+        mainLight.castShadow = true;
+        this.scene.add(mainLight);
+        
+        // Crystal lights - add point lights inside crystals for glow effect
+        for (let i = 0; i < 10; i++) {
+          const angle = (i / 10) * Math.PI * 2;
+          const radius = this.roomSize * 0.6;
+          
+          const light = new THREE.PointLight(
+            new THREE.Color(Math.random(), Math.random(), Math.random()).multiplyScalar(0.5),
+            1,
+            10
+          );
+          
+          light.position.x = Math.cos(angle) * radius;
+          light.position.z = Math.sin(angle) * radius;
+          light.position.y = 2 + Math.random() * 3;
+          
+          this.scene.add(light);
+          this.lights.push(light);
+        }
+      }
+      
+      onWindowResize() {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+      
+      animate() {
+        const delta = this.clock.getDelta();
+        
+        // Update animations
+        for (let mixer of this.mixers) {
+          mixer.update(delta);
+        }
+        
+        // Animate crystals
+        for (let i = 0; i < this.crystals.length; i++) {
+          const crystal = this.crystals[i];
+          crystal.rotation.y += delta * 0.1;
+        }
+        
+        // Animate lights - subtle color changes
+        for (let i = 0; i < this.lights.length; i++) {
+          const light = this.lights[i];
+          const time = Date.now() * 0.001;
+          const hue = (time * 0.1 + i * 0.5) % 1;
+          light.color.setHSL(hue, 0.5, 0.5);
+        }
+        
+        // Render scene
+        this.renderer.render(this.scene, this.camera);
+      }
+    }
+    
+    // Initialize the application when the page loads
+    window.addEventListener('load', () => {
+      const app = new CrystalMeditationSpace();
+    });
+  </script>
+</body>
+</html>
